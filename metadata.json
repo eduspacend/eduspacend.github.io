@@ -1,0 +1,8 @@
+{
+  "name": "EduSpace - ND Labs",
+  "description": "Nền tảng học tập trực tuyến hiện đại của ND Labs với các khóa học từ miễn phí tới trả phí và vô vàn tính năng hấp dẫn khác được tích hợp.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
