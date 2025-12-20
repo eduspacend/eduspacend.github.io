@@ -51,3 +51,11 @@ export interface Suggestion {
   content: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
 }
+
+export interface SiteSettings {
+  brandName: string;
+  logoUrl: string;
+  primaryColor: string;
+  heroTitle: string;
+  heroSubtitle: string;
+}

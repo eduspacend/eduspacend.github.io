@@ -1,19 +1,84 @@
 
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../App';
-import { Role, User, Course } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth, useConfig } from '../App';
+import { Role, User, Course, SiteSettings } from '../types';
 import { db } from '../db';
+import { DEFAULT_LOGO } from '../constants';
+import { Link } from 'react-router-dom';
+
+const RoleDropdown: React.FC<{ targetUser: User, onRoleChange: (role: Role) => void, disabled: boolean }> = ({ targetUser, onRoleChange, disabled }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const { settings } = useConfig();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const roles = [
+    { value: Role.ADMIN, label: 'ADMIN' },
+    { value: Role.VIP, label: 'VIP' },
+    { value: Role.USER, label: 'USER' }
+  ];
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={`w-28 flex items-center justify-between px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all ${
+          isOpen ? 'shadow-lg bg-white border-transparent scale-[1.02]' : 'bg-slate-50 hover:bg-white border border-slate-100 text-slate-400'
+        } ${disabled ? 'opacity-40 cursor-not-allowed' : 'text-slate-600'}`}
+        style={isOpen ? { border: `1px solid ${settings.primaryColor}20`, color: settings.primaryColor } : {}}
+      >
+        <span>{targetUser.role}</span>
+        <svg className={`w-2 h-2 transition-transform duration-300 ${isOpen ? 'rotate-180 opacity-100' : 'opacity-40'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-1.5 w-full bg-white/90 backdrop-blur-xl border border-white rounded-xl shadow-[0_15px_40px_rgba(0,0,0,0.1)] z-50 py-1.5 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-200">
+          {roles.map((r) => (
+            <button
+              key={r.value}
+              onClick={() => {
+                onRoleChange(r.value);
+                setIsOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-[9px] font-black tracking-widest transition-all hover:bg-slate-50 ${
+                targetUser.role === r.value ? 'bg-blue-50/50' : 'text-slate-400 hover:text-slate-900'
+              }`}
+              style={targetUser.role === r.value ? { color: settings.primaryColor } : {}}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const AdminDashboard: React.FC = () => {
   const { users, courses, updateUser, refreshData } = useAuth();
+  const { settings, updateSettings } = useConfig();
   const [tab, setTab] = useState<'USERS' | 'COURSES' | 'INTERFACE'>('USERS');
   const [search, setSearch] = useState('');
   const [isVerifying, setIsVerifying] = useState(true);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const { user: currentUser } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [tempSettings, setTempSettings] = useState<SiteSettings>(settings);
 
   useEffect(() => {
-    // Luôn load dữ liệu mới nhất khi vào dashboard
     refreshData();
   }, []);
 
@@ -26,157 +91,119 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleRoleChange = (targetUser: User, newRole: Role) => {
-    // Ngăn chặn Admin tự thay đổi quyền của chính mình
-    if (targetUser.id === currentUser?.id) {
-      alert('Bạn không thể tự thay đổi vai trò của chính mình để tránh mất quyền quản trị!');
-      return;
-    }
-    const updated = { ...targetUser, role: newRole };
-    if (newRole === Role.DEVELOPER) {
-      updated.isApproved = false; // Devs need separate approval
-    }
-    updateUser(updated);
+    if (targetUser.id === currentUser?.id) return;
+    updateUser({ ...targetUser, role: newRole });
   };
 
-  const toggleApproval = (targetUser: User) => {
-    updateUser({ ...targetUser, isApproved: !targetUser.isApproved });
+  const handleSaveInterface = () => {
+    updateSettings(tempSettings);
+    alert('Đã cập nhật giao diện thành công!');
   };
 
-  const grantVip = (targetUser: User, duration: 'MONTH' | 'PERMANENT') => {
-    // Nếu là Admin hoặc Developer, họ đã có quyền VIP, chỉ cập nhật meta dữ liệu
-    // Không thay đổi ROLE của Admin/Dev thành VIP
-    const isSpecialRole = targetUser.role === Role.ADMIN || targetUser.role === Role.DEVELOPER;
-    
-    updateUser({
-      ...targetUser,
-      role: isSpecialRole ? targetUser.role : Role.VIP,
-      vipUntil: duration === 'PERMANENT' ? 'PERMANENT' : new Date(Date.now() + 30*24*60*60*1000).toISOString()
-    });
-    
-    alert(`Đã cấp quyền VIP cho ${targetUser.fullName}!`);
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setTempSettings({ ...tempSettings, logoUrl: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const resetLogoToDefault = () => {
+    setTempSettings({ ...tempSettings, logoUrl: DEFAULT_LOGO });
   };
 
   if (isVerifying) {
     return (
-      <div className="min-h-[calc(100vh-64px)] flex items-center justify-center bg-slate-900">
-        <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-sm w-full text-center">
-          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+      <div className="min-h-[calc(100vh-56px)] flex items-center justify-center bg-slate-50/50 p-4">
+        <div className="bg-white p-8 rounded-[2rem] shadow-2xl shadow-slate-200/50 max-w-xs w-full text-center border border-slate-50">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-5 bg-slate-50 text-slate-300 border border-slate-100">
+            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Nhập mã truy cập</h2>
-          <p className="text-slate-500 mb-8 text-sm">Vui lòng nhập mật khẩu quản trị của tài khoản {currentUser?.email}</p>
+          <h2 className="text-lg font-black text-slate-900 mb-1 tracking-tight">Admin Gate</h2>
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-6">Mật khẩu quản trị</p>
           <input 
             type="password" 
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none mb-4 text-center tracking-widest font-mono"
-            placeholder="••••••••"
+            className="w-full px-4 py-3 rounded-xl border bg-slate-50 outline-none mb-6 text-center tracking-[0.4em] font-mono text-xl focus:bg-white focus:ring-4 focus:ring-blue-500/5 transition-all"
+            placeholder="••••••"
             value={adminPasswordInput}
             onChange={e => setAdminPasswordInput(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleVerify()}
           />
-          <button 
-            onClick={handleVerify}
-            className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg"
-          >
-            Xác minh
-          </button>
+          <button onClick={handleVerify} className="w-full text-white py-3 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-xl hover:opacity-90 transition-all active:scale-95" style={{ backgroundColor: settings.primaryColor }}>Xác minh ngay</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 md:px-8 py-10">
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+    <div className="max-w-5xl mx-auto px-6 py-10">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Bảng Quản Trị Hệ Thống</h1>
-          <p className="text-slate-500">Chào Admin {currentUser?.fullName}. Bạn đang quản lý {users.length} người dùng và {courses.length} khóa học.</p>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tighter">Quản Trị</h1>
+          <p className="text-slate-400 font-black uppercase text-[7px] tracking-[0.2em] mt-0.5 opacity-60">ND LABS ENGINE</p>
         </div>
         
-        <div className="flex bg-white p-1 rounded-xl shadow-sm border border-slate-200">
-          <button onClick={() => setTab('USERS')} className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab === 'USERS' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>Người dùng</button>
-          <button onClick={() => setTab('COURSES')} className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab === 'COURSES' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>Khóa học</button>
-          <button onClick={() => setTab('INTERFACE')} className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab === 'INTERFACE' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-50'}`}>Giao diện</button>
+        <div className="flex bg-slate-100/50 p-1 rounded-xl border border-slate-100/50">
+          {[
+            { id: 'USERS', label: 'THÀNH VIÊN' },
+            { id: 'COURSES', label: 'KHÓA HỌC' },
+            { id: 'INTERFACE', label: 'CÀI ĐẶT' }
+          ].map(t => (
+            <button 
+              key={t.id}
+              onClick={() => setTab(t.id as any)} 
+              className={`px-5 py-2 rounded-lg text-[8px] font-black tracking-widest uppercase transition-all ${tab === t.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`} 
+              style={tab === t.id ? { color: settings.primaryColor } : {}}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
       {tab === 'USERS' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-            <h3 className="font-bold text-slate-800">Quản lý tài khoản</h3>
-            <input 
-              type="text" 
-              placeholder="Tìm kiếm theo email..."
-              className="px-4 py-2 rounded-lg border border-slate-200 outline-none text-sm w-64 focus:ring-2 focus:ring-blue-100"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-50 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <h3 className="text-sm font-black text-slate-900">Người dùng <span className="text-slate-200 ml-1 font-bold">{users.length}</span></h3>
+            <div className="relative w-full sm:w-auto">
+               <input type="text" placeholder="Tìm kiếm..." className="w-full sm:w-56 pl-9 pr-4 py-2 text-[10px] rounded-lg bg-slate-50 border-none outline-none font-bold focus:bg-white focus:ring-2 focus:ring-blue-500/5 transition-all" value={search} onChange={e => setSearch(e.target.value)} />
+               <svg className="w-3.5 h-3.5 text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="bg-slate-50 text-slate-500 text-xs font-bold uppercase tracking-wider">
-                  <th className="px-6 py-4">Họ tên & Email</th>
-                  <th className="px-6 py-4">Vai trò</th>
-                  <th className="px-6 py-4">Trạng thái</th>
-                  <th className="px-6 py-4">Hành động</th>
+                <tr className="text-[7.5px] font-black uppercase tracking-[0.15em] text-slate-400 bg-slate-50/40">
+                  <th className="px-6 py-3">THÀNH VIÊN</th>
+                  <th className="px-6 py-3">VAI TRÒ</th>
+                  <th className="px-6 py-3">TRẠNG THÁI</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {users.filter(u => u.email.includes(search)).map(target => (
-                  <tr key={target.id} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <img src={target.avatar} className="w-8 h-8 rounded-full" alt="" />
-                        <div>
-                          <p className="text-sm font-bold text-slate-800">{target.fullName}</p>
-                          <p className="text-xs text-slate-500">{target.email}</p>
-                        </div>
+              <tbody className="divide-y divide-slate-50">
+                {users.filter(u => u.fullName.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())).map(target => (
+                  <tr key={target.id} className="hover:bg-slate-50/30 transition-colors">
+                    <td className="px-6 py-3 flex items-center space-x-3">
+                      <img src={target.avatar} className="w-8 h-8 rounded-lg border border-slate-50 shadow-sm" alt="" />
+                      <div>
+                        <p className="text-[10px] font-black text-slate-800 leading-tight">{target.fullName}</p>
+                        <p className="text-[8px] text-slate-400 font-bold opacity-70">{target.email}</p>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <select 
-                        className={`text-xs border-none rounded-md px-2 py-1 font-bold outline-none ${target.id === currentUser?.id ? 'bg-blue-100 text-blue-700 cursor-not-allowed' : 'bg-slate-100'}`}
-                        value={target.role}
-                        onChange={(e) => handleRoleChange(target, e.target.value as Role)}
-                        disabled={target.id === currentUser?.id}
-                      >
-                        <option value={Role.ADMIN}>ADMIN</option>
-                        <option value={Role.DEVELOPER}>DEV</option>
-                        <option value={Role.VIP}>VIP</option>
-                        <option value={Role.USER}>USER</option>
-                      </select>
+                    <td className="px-6 py-3">
+                      <RoleDropdown 
+                        targetUser={target} 
+                        onRoleChange={(role) => handleRoleChange(target, role)} 
+                        disabled={target.id === currentUser?.id} 
+                      />
                     </td>
-                    <td className="px-6 py-4">
-                      {target.role === Role.DEVELOPER ? (
-                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${target.isApproved ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {target.isApproved ? 'Đã duyệt' : 'Chờ duyệt'}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400">N/A</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex space-x-2">
-                        {target.role === Role.DEVELOPER && !target.isApproved && (
-                          <button 
-                            onClick={() => toggleApproval(target)}
-                            className="text-[10px] bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 font-bold"
-                          >
-                            Duyệt DEV
-                          </button>
-                        )}
-                        {/* Ẩn nút Cấp VIP đối với Admin/Dev vì họ đã có quyền VIP mặc định */}
-                        {target.role !== Role.VIP && target.role !== Role.ADMIN && target.role !== Role.DEVELOPER && (
-                          <button 
-                            onClick={() => grantVip(target, 'PERMANENT')}
-                            className="text-[10px] bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600 font-bold"
-                          >
-                            Cấp VIP vĩnh viễn
-                          </button>
-                        )}
-                        {target.id === currentUser?.id && (
-                          <span className="text-[10px] italic text-slate-400">Tài khoản hiện tại</span>
-                        )}
-                      </div>
+                    <td className="px-6 py-3">
+                      <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-500 rounded-full text-[7.5px] font-black uppercase tracking-wider border border-emerald-100/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.5)]"></span>
+                        <span>ONLINE</span>
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -186,25 +213,20 @@ const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ... (Các tab khác giữ nguyên) */}
       {tab === 'COURSES' && (
-        <div className="grid gap-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 flex justify-between items-center">
-             <h3 className="font-bold">Danh sách khóa học hiện có</h3>
-             <button className="bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition-all">+ Tạo khóa học mới</button>
+        <div className="space-y-6">
+          <div className="flex justify-between items-center bg-white px-6 py-4 rounded-xl border border-slate-100">
+             <h3 className="text-sm font-black text-slate-900">Quản lý nội dung</h3>
+             <Link to="/studio" className="text-white px-5 py-2 rounded-lg text-[8px] font-black uppercase tracking-widest hover:opacity-90 transition-all shadow-md" style={{ backgroundColor: settings.primaryColor }}>+ KHÓA HỌC</Link>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {courses.map(c => (
-              <div key={c.id} className="bg-white p-4 rounded-xl border border-slate-200 flex space-x-4">
-                <img src={c.thumbnail} className="w-24 h-24 object-cover rounded-lg" alt="" />
-                <div className="flex-grow">
-                  <h4 className="font-bold text-slate-800">{c.title}</h4>
-                  <p className="text-xs text-slate-500 mb-2">{c.isVip ? 'KHÓA VIP' : 'KHÓA MIỄN PHÍ'}</p>
-                  <div className="flex space-x-2">
-                    <button className="text-xs bg-slate-100 px-3 py-1 rounded hover:bg-slate-200 font-semibold">Chỉnh sửa</button>
-                    <button className="text-xs bg-red-50 text-red-600 px-3 py-1 rounded hover:bg-red-100 font-semibold">Xóa</button>
-                  </div>
+              <div key={c.id} className="bg-white p-4 rounded-2xl border border-slate-100 hover:shadow-xl hover:translate-y-[-2px] transition-all group">
+                <div className="relative h-28 rounded-xl overflow-hidden mb-4">
+                  <img src={c.thumbnail} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt="" />
                 </div>
+                <h4 className="font-black text-slate-800 mb-5 truncate text-xs">{c.title}</h4>
+                <Link to={`/studio/${c.id}`} className="block w-full text-center text-[8px] font-black uppercase tracking-widest py-2.5 rounded-lg border border-slate-100 hover:bg-slate-50 transition-all text-slate-400 hover:text-slate-900">CHỈNH SỬA</Link>
               </div>
             ))}
           </div>
@@ -212,14 +234,63 @@ const AdminDashboard: React.FC = () => {
       )}
 
       {tab === 'INTERFACE' && (
-        <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center py-20">
-          <div className="max-w-md mx-auto">
-             <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-               <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
-             </div>
-             <h3 className="text-xl font-bold mb-2">Quản lý giao diện</h3>
-             <p className="text-slate-500 text-sm mb-6">Chức năng tùy chỉnh màu sắc, banner và bố cục website đang được hoàn thiện.</p>
-             <button className="text-blue-600 font-bold hover:underline">Sử dụng theme mặc định (Blue ND Labs)</button>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm">
+              <h3 className="text-sm font-black text-slate-900 mb-8 flex items-center">
+                <div className="w-1 h-4 rounded-full mr-3" style={{ backgroundColor: settings.primaryColor }}></div>
+                Cấu hình
+              </h3>
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">TÊN ỨNG DỤNG</label>
+                    <input type="text" className="w-full px-4 py-2.5 rounded-lg border-none bg-slate-50 text-[11px] font-black text-slate-800" value={tempSettings.brandName} onChange={e => setTempSettings({...tempSettings, brandName: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">MÀU CHỦ ĐẠO</label>
+                    <div className="flex items-center space-x-3">
+                      <input type="color" className="w-9 h-9 rounded-lg cursor-pointer border-2 border-white shadow-sm shrink-0" value={tempSettings.primaryColor} onChange={e => setTempSettings({...tempSettings, primaryColor: e.target.value})} />
+                      <input type="text" className="flex-grow px-4 py-2 rounded-lg border-none bg-slate-50 font-mono text-[10px] font-black text-slate-400 uppercase" value={tempSettings.primaryColor} onChange={e => setTempSettings({...tempSettings, primaryColor: e.target.value})} />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                   <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">LOGO HỆ THỐNG</label>
+                   <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100/50">
+                      <div className="w-10 h-10 rounded-lg bg-white border border-slate-100 shadow-sm flex items-center justify-center p-1.5">
+                        <img src={tempSettings.logoUrl} className="w-full h-full object-contain" alt="Preview" />
+                      </div>
+                      <div className="flex-grow space-y-2">
+                        <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleLogoUpload} />
+                        <div className="flex gap-2">
+                          <button onClick={() => fileInputRef.current?.click()} className="px-3 py-2 bg-white border border-slate-200 text-slate-500 rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all">TẢI ẢNH LÊN</button>
+                          <button onClick={resetLogoToDefault} className="px-3 py-2 bg-slate-100 text-slate-400 rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">KHÔI PHỤC GỐC</button>
+                        </div>
+                      </div>
+                   </div>
+                </div>
+                <div>
+                   <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">TIÊU ĐỀ CHÀO MỪNG</label>
+                   <input type="text" className="w-full px-4 py-2.5 rounded-lg border-none bg-slate-50 text-[10px] font-black text-slate-800" value={tempSettings.heroTitle} onChange={e => setTempSettings({...tempSettings, heroTitle: e.target.value})} />
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-end">
+               <button onClick={handleSaveInterface} className="px-8 py-3 text-white rounded-xl font-black text-[9px] uppercase tracking-widest shadow-lg hover:opacity-90 transition-all active:scale-95" style={{ backgroundColor: settings.primaryColor }}>LƯU THAY ĐỔI</button>
+            </div>
+          </div>
+
+          <div className="bg-slate-900 rounded-2xl p-6 text-white h-fit relative overflow-hidden group border border-slate-800 shadow-2xl shadow-slate-900/40">
+               <div className="absolute top-0 right-0 w-24 h-24 bg-blue-600/10 blur-[50px] -mr-12 -mt-12 rounded-full"></div>
+               <h4 className="font-black mb-6 uppercase text-[7px] tracking-[0.2em] text-slate-500">XEM TRƯỚC</h4>
+               <div className="bg-white rounded-xl p-3 flex items-center space-x-3 text-slate-900 mb-5 shadow-lg">
+                  <img src={tempSettings.logoUrl} className="w-6 h-6 rounded-md object-contain" alt="" />
+                  <span className="font-black text-xs">{tempSettings.brandName}</span>
+               </div>
+               <div style={{ color: tempSettings.primaryColor }} className="font-black text-lg mb-3 leading-tight tracking-tight">{tempSettings.heroTitle}</div>
+               <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest opacity-40">Live Preview v2.5</p>
           </div>
         </div>
       )}

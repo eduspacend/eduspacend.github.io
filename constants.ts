@@ -6,6 +6,11 @@ export const ADMIN_EMAILS = [
   'chaunhatdangne5110@gmail.com'
 ];
 
+// Sử dụng đường dẫn tương đối để đảm bảo logo.png được tìm thấy chính xác
+export const DEFAULT_LOGO = 'logo.png';
+
+export const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed=default';
+
 export const INITIAL_USERS: User[] = [
   {
     id: 'admin-1',

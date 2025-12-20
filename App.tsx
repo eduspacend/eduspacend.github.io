@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { HashRouter, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
-import { Role, User, Course, Suggestion } from './types';
+import { Role, User, Course, Suggestion, SiteSettings } from './types';
 import { db } from './db';
 import { ADMIN_EMAILS } from './constants';
 import Home from './pages/Home';
@@ -10,6 +10,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import DevDashboard from './pages/DevDashboard';
 import CourseDetail from './pages/CourseDetail';
 import Profile from './pages/Profile';
+import Studio from './pages/Studio';
 import Navbar from './components/Navbar';
 
 interface AuthContextType {
@@ -23,12 +24,43 @@ interface AuthContextType {
   refreshData: () => void;
 }
 
+interface ConfigContextType {
+  settings: SiteSettings;
+  updateSettings: (newSettings: SiteSettings) => void;
+}
+
 const AuthContext = createContext<AuthContextType | null>(null);
+const ConfigContext = createContext<ConfigContextType | null>(null);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used within AuthProvider");
   return context;
+};
+
+export const useConfig = () => {
+  const context = useContext(ConfigContext);
+  if (!context) throw new Error("useConfig must be used within ConfigProvider");
+  return context;
+};
+
+const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [settings, setSettings] = useState<SiteSettings>(db.getSettings());
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--primary-color', settings.primaryColor);
+  }, [settings.primaryColor]);
+
+  const updateSettings = (newSettings: SiteSettings) => {
+    db.saveSettings(newSettings);
+    setSettings(newSettings);
+  };
+
+  return (
+    <ConfigContext.Provider value={{ settings, updateSettings }}>
+      {children}
+    </ConfigContext.Provider>
+  );
 };
 
 const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -41,7 +73,6 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     const savedUser = localStorage.getItem('eduspace_current_user');
     if (savedUser) {
       const parsedUser = JSON.parse(savedUser);
-      // Recovery: Force Admin role if email is in ADMIN_EMAILS
       if (ADMIN_EMAILS.includes(parsedUser.email) && parsedUser.role !== Role.ADMIN) {
         parsedUser.role = Role.ADMIN;
         localStorage.setItem('eduspace_current_user', JSON.stringify(parsedUser));
@@ -51,8 +82,7 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   }, []);
 
   const refreshData = () => {
-    const allUsers = db.getUsers();
-    setUsers(allUsers);
+    setUsers(db.getUsers());
     setCourses(db.getCourses());
     setSuggestions(db.getSuggestions());
   };
@@ -60,17 +90,13 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const login = async (email: string, pass: string) => {
     let allUsers = db.getUsers();
     const foundIndex = allUsers.findIndex(u => u.email === email && u.password === pass);
-    
     if (foundIndex !== -1) {
       let foundUser = allUsers[foundIndex];
-      
-      // Safety net: Nếu email nằm trong danh sách Admin hardcoded, buộc phải là Admin
       if (ADMIN_EMAILS.includes(email) && foundUser.role !== Role.ADMIN) {
         foundUser.role = Role.ADMIN;
         allUsers[foundIndex] = foundUser;
         db.saveUsers(allUsers);
       }
-      
       setUser(foundUser);
       localStorage.setItem('eduspace_current_user', JSON.stringify(foundUser));
       refreshData();
@@ -105,58 +131,52 @@ const ProtectedRoute: React.FC<{ children?: React.ReactNode, role?: Role[] }> = 
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" />;
   if (role && !role.includes(user.role)) return <Navigate to="/" />;
-  if (user.role === Role.DEVELOPER && !user.isApproved) {
-     return (
-       <div className="min-h-screen flex items-center justify-center bg-blue-50 p-6 text-center">
-         <div className="max-w-md bg-white p-8 rounded-2xl shadow-xl border-2 border-blue-200">
-           <h2 className="text-2xl font-bold text-blue-700 mb-4">Đang chờ phê duyệt</h2>
-           <p className="text-slate-600">Tài khoản Developer của bạn đang chờ Admin xác nhận. Vui lòng quay lại sau.</p>
-           <Link to="/" className="mt-6 inline-block text-blue-600 hover:underline">Về trang chủ</Link>
-         </div>
-       </div>
-     );
-  }
   return <>{children}</>;
 };
 
 const App: React.FC = () => {
+  const settings = db.getSettings();
+  
   return (
-    <AuthProvider>
-      <HashRouter>
-        <div className="min-h-screen flex flex-col">
-          <Navbar />
-          <main className="flex-grow pt-16">
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/course/:id" element={<ProtectedRoute><CourseDetail /></ProtectedRoute>} />
-              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route 
-                path="/admin" 
-                element={
-                  <ProtectedRoute role={[Role.ADMIN]}>
-                    <AdminDashboard />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route 
-                path="/developer" 
-                element={
-                  <ProtectedRoute role={[Role.DEVELOPER, Role.ADMIN]}>
-                    <DevDashboard />
-                  </ProtectedRoute>
-                } 
-              />
-              <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
-          </main>
-          <footer className="bg-blue-900 text-white py-8 px-4 text-center mt-auto">
-            <p className="mb-2">EduSpace © 2024 ND Labs. Mọi quyền được bảo lưu.</p>
-            <a href="https://nd-site.github.io" target="_blank" className="text-blue-300 hover:text-white underline text-sm">ND Labs Homepage</a>
-          </footer>
-        </div>
-      </HashRouter>
-    </AuthProvider>
+    <ConfigProvider>
+      <AuthProvider>
+        <HashRouter>
+          <div className="min-h-screen flex flex-col bg-white">
+            <Navbar />
+            <main className="flex-grow pt-14">
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/course/:id" element={<ProtectedRoute><CourseDetail /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                <Route path="/admin" element={<ProtectedRoute role={[Role.ADMIN]}><AdminDashboard /></ProtectedRoute>} />
+                <Route path="/developer" element={<ProtectedRoute role={[Role.DEVELOPER, Role.ADMIN]}><DevDashboard /></ProtectedRoute>} />
+                <Route path="/studio" element={<ProtectedRoute role={[Role.DEVELOPER, Role.ADMIN]}><Studio /></ProtectedRoute>} />
+                <Route path="/studio/:courseId" element={<ProtectedRoute role={[Role.DEVELOPER, Role.ADMIN]}><Studio /></ProtectedRoute>} />
+                <Route path="*" element={<Navigate to="/" />} />
+              </Routes>
+            </main>
+            <footer className="bg-white border-t border-slate-50 py-4 px-6 md:px-12 mt-auto">
+              <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-6 h-6 rounded-md bg-white border border-slate-100 p-1 shadow-sm flex items-center justify-center">
+                    <img src={settings.logoUrl} className="w-full h-full object-contain" alt="" />
+                  </div>
+                  <p className="text-[11px] font-black text-slate-800 tracking-tight">
+                    {settings.brandName} <span className="text-slate-300 font-bold mx-1">by</span> <span className="text-blue-600">ND Labs</span>
+                  </p>
+                </div>
+                <div className="flex items-center space-x-6">
+                   <a href="https://nd-site.github.io" target="_blank" className="text-slate-400 hover:text-blue-600 transition-colors text-[9px] font-black uppercase tracking-[0.2em]">ND LABS</a>
+                   <a href="#" className="text-slate-400 hover:text-blue-600 transition-colors text-[9px] font-black uppercase tracking-[0.2em]">BẢO MẬT</a>
+                   <p className="text-[9px] text-slate-300 font-black">© 2024</p>
+                </div>
+              </div>
+            </footer>
+          </div>
+        </HashRouter>
+      </AuthProvider>
+    </ConfigProvider>
   );
 };
 
