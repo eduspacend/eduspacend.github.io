@@ -12,6 +12,7 @@ import CourseDetail from './pages/CourseDetail';
 import Profile from './pages/Profile';
 import Studio from './pages/Studio';
 import Navbar from './components/Navbar';
+import AIChatBot from './components/AIChatBot';
 
 interface AuthContextType {
   user: User | null;
@@ -173,6 +174,8 @@ const App: React.FC = () => {
                 </div>
               </div>
             </footer>
+            {/* AI Chatbot Global Component */}
+            <AIChatBot />
           </div>
         </HashRouter>
       </AuthProvider>

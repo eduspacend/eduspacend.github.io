@@ -1,14 +1,17 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth, useConfig } from '../App';
 import { db } from '../db';
 import { Role, User } from '../types';
 import { DEFAULT_AVATAR } from '../constants';
 
+const REMEMBER_KEY = 'eduspace_remember_me';
+
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
   const [fullName, setFullName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
@@ -18,6 +21,21 @@ const Login: React.FC = () => {
   const { login, refreshData } = useAuth();
   const { settings } = useConfig();
   const navigate = useNavigate();
+
+  // Load remembered credentials on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(REMEMBER_KEY);
+    if (saved) {
+      try {
+        const { email: savedEmail, password: savedPassword } = JSON.parse(saved);
+        setEmail(savedEmail);
+        setPassword(savedPassword);
+        setRememberMe(true);
+      } catch (e) {
+        console.error("Error loading remembered credentials", e);
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,6 +66,12 @@ const Login: React.FC = () => {
     } else {
       const success = await login(email, password);
       if (success) {
+        // Handle "Remember Me"
+        if (rememberMe) {
+          localStorage.setItem(REMEMBER_KEY, JSON.stringify({ email, password }));
+        } else {
+          localStorage.removeItem(REMEMBER_KEY);
+        }
         navigate('/');
       } else {
         setError('Email hoặc mật khẩu không chính xác!');
@@ -123,7 +147,7 @@ const Login: React.FC = () => {
             {isRegister && (
               <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
                 <div className="relative group">
-                  <label className="absolute left-4 top-[-8px] bg-white px-2 text-[8px] font-black text-slate-400 uppercase tracking-widest z-10 transition-colors group-focus-within:text-blue-600" style={isRegister ? {} : { display: 'none' }}>Họ và tên</label>
+                  <label className="absolute left-4 top-[-8px] bg-white px-2 text-[8px] font-black text-slate-400 uppercase tracking-widest z-10 transition-colors group-focus-within:text-blue-600">Họ và tên</label>
                   <input 
                     required
                     type="text" 
@@ -147,12 +171,17 @@ const Login: React.FC = () => {
             )}
 
             <div className="relative group">
-              <label className="absolute left-4 top-[-8px] bg-white px-2 text-[8px] font-black text-slate-400 uppercase tracking-widest z-10 transition-colors group-focus-within:text-blue-600">Email công việc</label>
+              <label 
+                className="absolute left-4 top-[-8px] bg-white px-2 text-[8px] font-black uppercase tracking-widest z-10 transition-all"
+                style={{ color: settings.primaryColor }}
+              >
+                EMAIL
+              </label>
               <input 
                 required
                 type="email" 
-                className="w-full px-5 py-3.5 rounded-2xl border border-slate-100 bg-slate-50 outline-none text-xs font-bold text-slate-800 focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-100 transition-all"
-                placeholder="name@company.com"
+                className="w-full px-5 py-3.5 rounded-2xl border border-slate-100 bg-slate-50 outline-none text-xs font-bold text-slate-800 focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-100 transition-all shadow-[0_4px_12px_rgba(0,0,0,0.02)]"
+                placeholder="example@email.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
               />
@@ -163,12 +192,34 @@ const Login: React.FC = () => {
               <input 
                 required
                 type="password" 
-                className="w-full px-5 py-3.5 rounded-2xl border border-slate-100 bg-slate-50 outline-none text-xs font-bold text-slate-800 tracking-[0.3em] focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-100 transition-all"
+                className="w-full px-5 py-3.5 rounded-2xl border border-slate-100 bg-slate-50 outline-none text-xs font-bold text-slate-800 tracking-[0.3em] focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-100 transition-all shadow-[0_4px_12px_rgba(0,0,0,0.02)]"
                 placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
               />
             </div>
+
+            {!isRegister && (
+              <div className="flex items-center justify-between px-1">
+                <label className="flex items-center space-x-2 cursor-pointer group">
+                  <div className="relative">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={rememberMe}
+                      onChange={e => setRememberMe(e.target.checked)}
+                    />
+                    <div className="w-5 h-5 border-2 border-slate-200 rounded-lg peer-checked:bg-slate-900 peer-checked:border-slate-900 transition-all flex items-center justify-center" style={rememberMe ? {backgroundColor: settings.primaryColor, borderColor: settings.primaryColor} : {}}>
+                      <svg className={`w-3 h-3 text-white transition-opacity ${rememberMe ? 'opacity-100' : 'opacity-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors">Ghi nhớ tôi</span>
+                </label>
+                <button type="button" className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-900 transition-colors">Quên mật khẩu?</button>
+              </div>
+            )}
 
             <button 
               disabled={loading}

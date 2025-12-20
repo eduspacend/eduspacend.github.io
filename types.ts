@@ -13,9 +13,9 @@ export interface User {
   fullName: string;
   role: Role;
   avatar?: string;
-  isApproved?: boolean; // For Developer role
-  vipUntil?: string | 'PERMANENT'; // ISO date or permanent
-  managementPassword?: string; // Unique password for Admin/Dev access
+  isApproved?: boolean;
+  vipUntil?: string | 'PERMANENT';
+  managementPassword?: string;
 }
 
 export interface Lesson {
@@ -23,13 +23,18 @@ export interface Lesson {
   title: string;
   videoUrl: string;
   content: string;
+  summary?: string;
 }
+
+export type QuizType = 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'SHORT_ANSWER' | 'ESSAY';
 
 export interface Quiz {
   id: string;
+  type: QuizType;
   question: string;
-  options: string[];
-  correctAnswer: number;
+  options?: string[]; // Dùng cho MULTIPLE_CHOICE
+  correctAnswer?: string | number; // Index cho MC/TF, String cho Short Answer
+  explanation?: string; // Gợi ý đáp án hoặc tiêu chí chấm cho Essay
 }
 
 export interface Course {
